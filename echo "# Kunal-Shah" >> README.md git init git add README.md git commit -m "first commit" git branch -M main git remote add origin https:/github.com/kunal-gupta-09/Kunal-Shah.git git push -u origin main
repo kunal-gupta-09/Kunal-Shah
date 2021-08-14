@@ -1,0 +1,126 @@
+
+#define LIP_SWITCH_PIN D7
+#define BLYNK_PRINT Serial
+#define SLEEP_TIME 20 // ThingSpeak will only accept updates every 15 seconds.
+unsigned long myChannelNumber = 1431159;
+const char * myWriteAPIKey = "LRDV5IJSTUY1WM2B";
+char ssid[] = "Haveli 2.4G";          //  your network SSID (name) 
+char pass[] = "Chicken69";   // your network password
+char auth[] = "Iwu3NBqbR2a1ewTZt2kGRcKKGqwQltGx";
+bool lip_closed = false;
+int flag=1;
+
+#include <BlynkSimpleEsp8266.h>
+BlynkTimer timer;
+#ifdef SPARK
+  #include "ThingSpeak/ThingSpeak.h"
+#else
+  #include "ThingSpeak.h"
+#endif
+#ifdef ARDUINO_ARCH_AVR
+
+  #ifdef ARDUINO_AVR_YUN
+    #include "YunClient.h"
+    YunClient client;
+  #else
+
+    #ifdef USE_WIFI_SHIELD
+      #include <SPI.h>
+      #include <WiFi.h>
+      int status = WL_IDLE_STATUS;
+      WiFiClient  client;
+    #else
+      #include <SPI.h>
+      #include <Ethernet.h>
+      byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
+      EthernetClient client;
+    #endif
+  #endif
+#endif
+
+#ifdef ARDUINO_ARCH_ESP8266
+  #include <ESP8266WiFi.h>
+  int status = WL_IDLE_STATUS;
+  WiFiClient  client;
+#endif
+
+#ifdef SPARK
+    TCPClient client;
+#endif
+void notifyOnThings()
+{
+  int pillDetected = digitalRead(D1);
+   if(pillDetected==1 && flag==0) {
+    Serial.println("Bottle Empty");
+    Blynk.notify("Alert : BOTTLE EMPTY");
+    flag=1;
+  }
+  else if (pillDetected==1)
+  { 
+    flag=0;
+  }
+}
+
+void setup() {
+  #if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_ESP8266)
+    #ifdef ARDUINO_AVR_YUN
+      Bridge.begin();
+    #else
+      #if defined(USE_WIFI_SHIELD) || defined(ARDUINO_ARCH_ESP8266)
+        WiFi.begin(ssid, pass);
+      #else
+        Ethernet.begin(mac);
+      #endif
+    #endif
+  #endif
+
+  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
+  pinMode(LIP_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(D1, INPUT);
+
+  ThingSpeak.begin(client);
+  Serial.begin(9600);
+Blynk.begin(auth, ssid, pass); 
+pinMode(D1,INPUT_PULLUP);
+timer.setInterval(1000L,notifyOnThings); 
+}
+
+void loop()
+{
+  Blynk.run();
+  timer.run();
+  bool lip_opened = (digitalRead(LIP_SWITCH_PIN) == HIGH);
+  if (lip_opened) 
+  {
+    ThingSpeak.writeField(myChannelNumber, 1, lip_opened, myWriteAPIKey);
+    lip_closed = false;
+  } 
+  else
+  {
+    if (lip_closed)
+    {
+      digitalWrite(LED_BUILTIN, LOW);   // Turn the LED on by making the voltage LOW
+      // read the input on analog pin 0:
+      int sensorValue = digitalRead(D1);
+      delay(5);
+      sensorValue +=digitalRead(D1);
+      delay(5);
+      sensorValue += digitalRead(D1);
+      delay(5);
+      sensorValue += digitalRead(D1);
+      sensorValue >>= 2;
+      digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by making the voltage HIGH
+    
+      // Write to ThingSpeak. There are up to 8 fields in a channel, allowing you to store up to 8 different
+      ThingSpeak.writeField(myChannelNumber, 3, sensorValue, myWriteAPIKey);
+    } else {
+      ThingSpeak.writeField(myChannelNumber, 1, lip_opened, myWriteAPIKey);
+      lip_closed = true;
+    }
+  }
+
+  delay(SLEEP_TIME * 1000);
+  // TODO: reduce power usage
+  //ESP.deepSleep(SLEEP_TIME * 1000000, WAKE_RF_DEFAULT);
+}
+ 
